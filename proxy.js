@@ -5,23 +5,34 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const session = req.auth;
 
-  const publicRoutes = ['/login', '/register', '/invite/accept', '/api/auth', '/api/register'];
   const isPublic =
     pathname === '/' ||
-    publicRoutes.some((route) => pathname.startsWith(route));
+    pathname === '/login' ||
+    pathname === '/register' ||
+    pathname === '/invite/accept' ||
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/register') ||
+    pathname.startsWith('/api/invite');
 
-  if (!session && !isPublic) {
+  // Always let public routes through first
+  if (isPublic) {
+    // Only redirect away from login/register if they have a complete session
+    if (session?.user?.workspaceId && (pathname === '/login' || pathname === '/register')) {
+      return NextResponse.redirect(new URL('/dashboard', req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Not logged in → /login
+  if (!session) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  if (session && !session.user.workspaceId && pathname !== '/onboarding') {
+  // Logged in but no workspace → /onboarding (only for non-API, non-onboarding routes)
+  if (!session.user?.workspaceId && pathname !== '/onboarding') {
     if (!pathname.startsWith('/api')) {
       return NextResponse.redirect(new URL('/onboarding', req.url));
     }
-  }
-
-  if (session && (pathname === '/login' || pathname === '/register')) {
-    return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
   return NextResponse.next();

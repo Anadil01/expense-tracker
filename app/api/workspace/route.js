@@ -5,7 +5,6 @@ import Workspace from '@/lib/models/Workspace';
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
-  // 1. Get the current session — who is making this request?
   const session = await auth();
 
   if (!session) {
@@ -20,26 +19,30 @@ export async function POST(req) {
 
   await connectDB();
 
-  // 2. One org per user — check if they already have one
-  const existingUser = await User.findById(session.user.id);
+  // ← Find by email instead of ID — works for both Google and credentials users
+  const existingUser = await User.findOne({ email: session.user.email }).populate('workspaceId');
+
+  if (!existingUser) {
+    return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
+  }
+
+  // If workspace already exists, return it gracefully
   if (existingUser.workspaceId) {
     return NextResponse.json(
-      { error: 'You already belong to a workspace' },
-      { status: 409 }
+      { workspace: existingUser.workspaceId, alreadyExists: true },
+      { status: 200 }
     );
   }
 
-  // 3. Create the workspace
   const workspace = await Workspace.create({
     name: name.trim(),
-    ownerId: session.user.id,
+    ownerId: existingUser._id,       // ← use DB id, not session id
     monthlyBudget: monthlyBudget || 0,
   });
 
-  // 4. Update the user — give them admin role + link to workspace
-  await User.findByIdAndUpdate(session.user.id, {
+  await User.findByIdAndUpdate(existingUser._id, {  // ← same here
     workspaceId: workspace._id,
-    role: 'admin',            // creator is always admin
+    role: 'admin',
   });
 
   return NextResponse.json({ workspace }, { status: 201 });
